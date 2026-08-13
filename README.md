@@ -1,10 +1,38 @@
 # CloudDrive2 → 飞书(Feishu/Lark) Webhook 中转服务
 
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-green)
+![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)
+
 接收 [CloudDrive2](https://www.clouddrive2.com/) 的 webhook 推送，将文件变动 / 挂载状态事件翻译为中文，并转发到**飞书群机器人**通知。
 
 ## 为什么需要中间层？
 
 CloudDrive2 的 webhook 配置只支持 JSON 变量模板，无法直接处理变量替换后的动作翻译（如 `create` → `新建`）。同时文件变动事件依赖 `data` 数组结构才能正确拿到真实路径。本项目作为中间层接收 CD2 推送，解析并翻译后发送到飞书。
+
+## 通知效果
+
+![飞书通知效果](/preview.png)
+
+```
+📁【CloudDrive2 文件变动通知】
+-------------------------------
+设备名称: my-nas
+操作用户: user@example.com
+变动类型: 新建文件/目录 ➕
+类型: 文件 📄
+源 文件: /115open/Movies/星际穿越.mkv
+触发时间: 2026-08-14 01:06:07
+```
+
+```
+🔌【CloudDrive2 挂载状态通知】
+-------------------------------
+设备名称: my-nas
+变动动作: 挂载成功 🔌
+挂载路径: /CloudNAS/115
+触发时间: 2026-08-14 01:10:00
+```
 
 ## 特性
 
@@ -13,36 +41,61 @@ CloudDrive2 的 webhook 配置只支持 JSON 变量模板，无法直接处理�
 - ✅ 挂载点状态通知（挂载成功 / 卸载 / 失败原因）
 - ✅ 过滤未解析的 `{...}` 占位符，通知永远干净可读
 - ✅ 中文 + Emoji 排版，飞书群机器人直接可读
+- ✅ 多线程处理（`ThreadingHTTPServer`），高并发不阻塞
+- ✅ 飞书推送超时保护 + 失败自动重试
+- ✅ 消息长度截断保护（飞书 4096 字节限制）
+- ✅ `GET /health` 健康检查端点
 - ✅ 零第三方依赖（仅 Python 标准库）
 
 ## 快速开始
 
-### 1. 准备
+### 准备
 
 - 一个飞书群机器人 Webhook 地址（群设置 → 机器人 → 添加自定义机器人）
-- Python 3.11+ 或 Docker
+- 装有 Docker 的机器（或 Python 3.11+）
 
-### 2. 运行
-
-#### Docker Compose（推荐）
+### 方法一：Docker Compose（推荐）
 
 ```bash
-mkdir cd2-feishu-relay && cd cd2-feishu-relay
+git clone https://github.com/klxntktk/cd2-feishu-relay.git
+cd cd2-feishu-relay
 cp docker-compose.example.yml docker-compose.yml
-# 编辑 docker-compose.yml，填入你的 FEISHU_WEBHOOK
+```
+
+编辑 `docker-compose.yml`，填入你的飞书 Webhook 地址：
+
+```yaml
+services:
+  cd2-feishu-relay:
+    build: .
+    image: cd2-feishu-relay:latest
+    container_name: cd2-feishu-relay
+    restart: unless-stopped
+    ports:
+      - "9095:9090"
+    environment:
+      - FEISHU_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/你的密钥
+      - LISTEN_PORT=9090
+```
+
+启动：
+
+```bash
 docker compose up -d
 ```
 
-#### 直接运行
+### 方法二：直接运行 Python
 
 ```bash
+git clone https://github.com/klxntktk/cd2-feishu-relay.git
+cd cd2-feishu-relay
 export FEISHU_WEBHOOK="https://open.feishu.cn/open-apis/bot/v2/hook/你的密钥"
 python3 server.py
 ```
 
-### 3. 配置 CloudDrive2
+## 配置 CloudDrive2
 
-在 CloudDrive2 的 `config` 目录添加 `webhook.toml`，`base_url` 指向本服务：
+在 CloudDrive2 的 `config` 目录添加 `webhook.toml`，`base_url` 指向本服务（参考项目内 `webhook.example.toml`）：
 
 ```toml
 # global parameters
@@ -108,26 +161,10 @@ body = '''
 
 > ⚠️ 注意事项：文件变动实时监控是 CloudDrive2 **会员功能**。CD2 版本建议 V0.8.5+（最新版效果最佳）。
 
-## 通知效果示例
+保存后重启 CloudDrive2 生效：
 
-```
-📁【CloudDrive2 文件变动通知】
--------------------------------
-设备名称: my-nas
-操作用户: user@example.com
-变动类型: 新建文件/目录 ➕
-类型: 文件 📄
-源 文件: /115open/Movies/星际穿越.mkv
-触发时间: 2026-08-14 01:06:07
-```
-
-```
-🔌【CloudDrive2 挂载状态通知】
--------------------------------
-设备名称: my-nas
-变动动作: 挂载成功 🔌
-挂载路径: /CloudNAS/115
-触发时间: 2026-08-14 01:10:00
+```bash
+docker restart clouddrive2
 ```
 
 ## 环境变量
@@ -136,6 +173,23 @@ body = '''
 |---|---|---|---|
 | `FEISHU_WEBHOOK` | 是 | 无 | 飞书群机器人 Webhook 地址 |
 | `LISTEN_PORT` | 否 | `9090` | HTTP 监听端口 |
+| `FEISHU_TIMEOUT` | 否 | `10` | 飞书推送超时（秒） |
+| `FEISHU_RETRIES` | 否 | `2` | 飞书推送失败重试次数 |
+
+## 健康检查
+
+```bash
+curl http://localhost:9095/health
+# {"status":"ok"}
+```
+
+## 测试
+
+往挂载的网盘里新建/删除一个文件，飞书群应立刻收到中文通知。查看日志：
+
+```bash
+docker logs -f cd2-feishu-relay
+```
 
 ## License
 

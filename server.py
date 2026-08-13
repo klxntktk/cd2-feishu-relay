@@ -9,15 +9,25 @@ CloudDrive2 → Feishu(Lark) Webhook Relay
 环境变量:
   FEISHU_WEBHOOK  飞书群机器人 Webhook 地址 (必填)
   LISTEN_PORT     监听端口 (默认 9090)
+
+特性:
+  - 多线程处理并发请求 (ThreadingHTTPServer)
+  - 飞书推送超时 + 失败自动重试
+  - 消息长度截断保护 (飞书 text 消息限制 4096 字节)
+  - GET /health 健康检查端点
 """
 
 import json
 import os
+import time
 import urllib.request
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 
 FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")
 LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "9090"))
+FEISHU_TIMEOUT = int(os.environ.get("FEISHU_TIMEOUT", "10"))
+FEISHU_RETRIES = int(os.environ.get("FEISHU_RETRIES", "2"))
+MAX_TEXT_BYTES = 4000  # 飞书 text 消息上限 4096 字节，留一点余量
 
 ACTION_MAP = {
     "create": "新建文件/目录 ➕",
@@ -56,7 +66,48 @@ def translate_action(raw_action, dest_file, source_file):
     return "文件变动/新建 📁"
 
 
+def send_feishu(text):
+    """推送消息到飞书，带超时与重试。成功返回 True。"""
+    feishu_msg = {
+        "msg_type": "text",
+        "content": {"text": text},
+    }
+    body = json.dumps(feishu_msg).encode("utf-8")
+
+    last_err = None
+    for attempt in range(1, FEISHU_RETRIES + 1):
+        try:
+            req = urllib.request.Request(
+                FEISHU_WEBHOOK,
+                data=body,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=FEISHU_TIMEOUT) as resp:
+                resp_body = resp.read().decode("utf-8")
+                print(f"[Relay Success] attempt={attempt} Feishu response: {resp_body}", flush=True)
+                return True
+        except Exception as err:
+            last_err = err
+            print(f"[Relay Error] attempt={attempt}/{FEISHU_RETRIES}: {err}", flush=True)
+            if attempt < FEISHU_RETRIES:
+                time.sleep(1)
+
+    print(f"[Relay Failed] {last_err}", flush=True)
+    return False
+
+
 class RelayHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        # 健康检查端点
+        if self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
+            return
+        self.send_response(404)
+        self.end_headers()
+
     def do_POST(self):
         content_length = int(self.headers.get("Content-Length", 0))
         post_data = self.rfile.read(content_length)
@@ -83,22 +134,14 @@ class RelayHandler(BaseHTTPRequestHandler):
 
         combined = "\n\n".join(self._format_event(ev, device_name, user_name, event_time) for ev in events)
 
-        feishu_msg = {
-            "msg_type": "text",
-            "content": {"text": combined},
-        }
+        # 飞书 text 消息长度保护：超出则截断并提示
+        if len(combined.encode("utf-8")) > MAX_TEXT_BYTES:
+            truncated = combined.encode("utf-8")[:MAX_TEXT_BYTES].decode("utf-8", errors="ignore")
+            truncated += "\n\n⚠️ 事件过多，消息已截断"
+            combined = truncated
 
-        try:
-            req = urllib.request.Request(
-                FEISHU_WEBHOOK,
-                data=json.dumps(feishu_msg).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req) as resp:
-                resp_body = resp.read().decode("utf-8")
-                print(f"[Relay Success] Feishu response: {resp_body}", flush=True)
-        except Exception as err:
-            print(f"[Relay Error] {err}", flush=True)
+        if combined.strip():
+            send_feishu(combined)
 
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -148,11 +191,18 @@ class RelayHandler(BaseHTTPRequestHandler):
         lines.append(f"触发时间: {event_time}")
         return "\n".join(lines)
 
+    def log_message(self, format, *args):
+        # 精简访问日志，避免刷屏
+        if self.path == "/health":
+            return
+        super().log_message(format, *args)
+
 
 if __name__ == "__main__":
     if not FEISHU_WEBHOOK:
         print("[FATAL] FEISHU_WEBHOOK 环境变量未设置，程序无法启动。", flush=True)
         raise SystemExit(1)
     print(f"Starting CD2 Feishu Relay on port {LISTEN_PORT}...", flush=True)
-    server = HTTPServer(("0.0.0.0", LISTEN_PORT), RelayHandler)
+    print(f"[Config] FEISHU_TIMEOUT={FEISHU_TIMEOUT}s FEISHU_RETRIES={FEISHU_RETRIES}", flush=True)
+    server = ThreadingHTTPServer(("0.0.0.0", LISTEN_PORT), RelayHandler)
     server.serve_forever()

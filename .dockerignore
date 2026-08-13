@@ -1,0 +1,9 @@
+.git
+.gitignore
+.env
+README.md
+TUTORIAL.md
+LICENSE
+docker-compose*
+webhook.example.toml
+__pycache__/
