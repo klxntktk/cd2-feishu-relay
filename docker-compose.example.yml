@@ -1,7 +1,6 @@
 services:
   cd2-feishu-relay:
-    build: .
-    image: cd2-feishu-relay:latest
+    image: ghcr.io/klxntktk/cd2-feishu-relay:latest
     container_name: cd2-feishu-relay
     restart: unless-stopped
     ports:
