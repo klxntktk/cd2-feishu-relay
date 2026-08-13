@@ -1,0 +1,10 @@
+# 密钥与本地配置
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# 日志
+*.log

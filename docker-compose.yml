@@ -1,0 +1,14 @@
+services:
+  cd2-feishu-relay:
+    image: python:3.11-alpine
+    container_name: cd2-feishu-relay
+    restart: unless-stopped
+    ports:
+      - "9095:9090"
+    environment:
+      - FEISHU_WEBHOOK=${FEISHU_WEBHOOK}
+      - LISTEN_PORT=9090
+    volumes:
+      - ./server.py:/app/server.py
+    working_dir: /app
+    command: python3 server.py

@@ -1,0 +1,67 @@
+# CloudDrive2 webhook 配置示例
+# 放置位置: CloudDrive2 的 config 目录下 webhook.toml
+# 修改 base_url 为本中转服务的地址后，保存并重启 CloudDrive2
+
+# global parameters
+[global_params]
+# 中转服务地址（Docker 部署时填宿主机 IP）
+base_url = "http://你的主机IP:9090"
+# 开启 Webhook
+enabled = true
+# 时间格式：本地时间 YYYY-MM-DD HH:mm:ss
+time_format = "local:%Y-%m-%d %H:%M:%S"
+
+# The default http headers
+[global_params.default_headers]
+content-type = "application/json"
+user-agent = "clouddrive2/{version}"
+
+# 1. 文件变动通知（新建、删除、重命名等）
+[file_system_watcher]
+url = "{base_url}"
+method = "POST"
+enabled = true
+body = '''
+{
+  "device_name": "{device_name}",
+  "user_name": "{user_name}",
+  "version": "{version}",
+  "event_category": "{event_category}",
+  "event_name": "{event_name}",
+  "event_time": "{event_time}",
+  "send_time": "{send_time}",
+  "data": [
+    {
+      "action": "{action}",
+      "is_dir": "{is_dir}",
+      "source_file": "{source_file}",
+      "destination_file": "{destination_file}"
+    }
+  ]
+}
+'''
+
+# 2. 挂载点状态通知（挂载成功、卸载、失败等）
+[mount_point_watcher]
+url = "{base_url}"
+method = "POST"
+enabled = true
+body = '''
+{
+  "device_name": "{device_name}",
+  "user_name": "{user_name}",
+  "version": "{version}",
+  "event_category": "{event_category}",
+  "event_name": "{event_name}",
+  "event_time": "{event_time}",
+  "send_time": "{send_time}",
+  "data": [
+    {
+      "action": "{action}",
+      "mount_point": "{mount_point}",
+      "status": "{status}",
+      "reason": "{reason}"
+    }
+  ]
+}
+'''
