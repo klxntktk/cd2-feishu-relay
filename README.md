@@ -54,21 +54,29 @@ CloudDrive2 的 webhook 配置只支持 JSON 变量模板，无法直接处理�
 - 一个飞书群机器人 Webhook 地址（群设置 → 机器人 → 添加自定义机器人）
 - 装有 Docker 的机器（或 Python 3.11+）
 
-### 方法一：Docker Compose（推荐）
+### 方法一：直接拉取镜像（推荐）
 
 ```bash
-git clone https://github.com/klxntktk/cd2-feishu-relay.git
-cd cd2-feishu-relay
-cp docker-compose.example.yml docker-compose.yml
+docker pull ghcr.io/klxntktk/cd2-feishu-relay:latest
 ```
 
-编辑 `docker-compose.yml`，填入你的飞书 Webhook 地址：
+运行容器：
+
+```bash
+docker run -d \
+  --name cd2-feishu-relay \
+  --restart unless-stopped \
+  -p 9095:9090 \
+  -e FEISHU_WEBHOOK="https://open.feishu.cn/open-apis/bot/v2/hook/你的密钥" \
+  ghcr.io/klxntktk/cd2-feishu-relay:latest
+```
+
+或使用 Docker Compose：
 
 ```yaml
 services:
   cd2-feishu-relay:
-    build: .
-    image: cd2-feishu-relay:latest
+    image: ghcr.io/klxntktk/cd2-feishu-relay:latest
     container_name: cd2-feishu-relay
     restart: unless-stopped
     ports:
@@ -77,8 +85,6 @@ services:
       - FEISHU_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/你的密钥
       - LISTEN_PORT=9090
 ```
-
-启动：
 
 ```bash
 docker compose up -d
