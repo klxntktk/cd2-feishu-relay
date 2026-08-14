@@ -56,9 +56,19 @@ CloudDrive2 的 webhook 配置只支持 JSON 变量模板，无法直接处理�
 
 ### 方法一：直接拉取镜像（推荐）
 
+> 🇨🇳 **国内用户推荐从 Docker Hub 拉取**（速度快，可配合国内加速器）：
+
+```bash
+docker pull vhgods/cd2-feishu-relay:latest
+```
+
+> 🌍 海外用户也可以从 GitHub Container Registry 拉取：
+
 ```bash
 docker pull ghcr.io/klxntktk/cd2-feishu-relay:latest
 ```
+
+两个仓库内容完全一致（GitHub Actions 自动同步），任选其一即可。
 
 运行容器：
 
@@ -68,15 +78,15 @@ docker run -d \
   --restart unless-stopped \
   -p 9095:9090 \
   -e FEISHU_WEBHOOK="https://open.feishu.cn/open-apis/bot/v2/hook/你的密钥" \
-  ghcr.io/klxntktk/cd2-feishu-relay:latest
+  vhgods/cd2-feishu-relay:latest
 ```
 
-或使用 Docker Compose：
+或使用 Docker Compose（Docker Hub 版）：
 
 ```yaml
 services:
   cd2-feishu-relay:
-    image: ghcr.io/klxntktk/cd2-feishu-relay:latest
+    image: vhgods/cd2-feishu-relay:latest
     container_name: cd2-feishu-relay
     restart: unless-stopped
     ports:
@@ -85,6 +95,8 @@ services:
       - FEISHU_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/你的密钥
       - LISTEN_PORT=9090
 ```
+
+（如用 ghcr.io 镜像，把上面 `image` 换成 `ghcr.io/klxntktk/cd2-feishu-relay:latest` 即可）
 
 ```bash
 docker compose up -d
