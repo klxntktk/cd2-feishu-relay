@@ -65,3 +65,12 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Ensure Docker Hub repository is public
+        run: |
+          curl -sL -X PATCH \
+            -H "Content-Type: application/json" \
+            -u "${{ secrets.DOCKER_USERNAME }}:${{ secrets.DOCKER_PASSWORD }}" \
+            -d '{"is_private": false}' \
+            "https://hub.docker.com/v2/repositories/vhgods/cd2-feishu-relay/" \
+            -o /dev/null -w "Docker Hub visibility: HTTP %{http_code}\n"
